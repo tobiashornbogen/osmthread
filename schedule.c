@@ -31,6 +31,7 @@ struct tblock_t
   struct tcontext_t context;
   enum thread_state state;
   int base_priority;
+  int waiting_time;
 };
 
 static struct tblock_t threads[MAX_THREADS];
@@ -97,6 +98,35 @@ rr_dequeue (void)
   // and remove and return the left element
   struct tblock_t *res = queue->queue[queue->left++];
   queue->left %= MAX_THREADS;
+
+  for (unsigned int p = 0; i < MAX_PRIORITY; ++p) {
+    struct rrqueue_t *q = &queues[p];
+    int idx = q->left;
+
+    while (idx != q->right) {
+      struct tblock_t *tb = q->queue[idx];
+      if (tb && tb->state == ready) {
+        tb->waiting_time++;
+        
+        if (tb->waiting_time >= 5 && p > 0) {
+          int remove_idx = idx;
+          while (remove_idx != (q->right - 1 + MAX_THREADS) % MAX_THREADS) {
+            q->queue[remove_idx] = q->queue[(remove_idx + 1) % MAX_THREADS];
+            remove_idx = (remove_idx + 1) % MAX_THREADS;
+          }
+          q->right = (q->right - 1 + MAX_THREADS) % MAX_THREADS;
+
+          tb->base_priority = p - 1;
+          tb->waiting_time = 0;
+          rr_enqueue(tb);
+
+          idx = q->left; 
+          continue; 
+        }
+      }
+      idx = (idx + 1) % MAX_THREADS;
+    }
+  }
 
   return res;
 }
